@@ -33,7 +33,7 @@ class NegativeItemSet:
         self.num_neg_samples = num_neg_samples
         
     def __getitem__(self, index):
-        interact_status = ratings.groupby('userId').iloc[index]['itemId'].apply(set).reset_index().rename(
+        interact_status = self.ratings.groupby('userId').iloc[index]['itemId'].apply(set).reset_index().rename(
             columns={'itemId': 'interacted_items'})
         interact_status['negative_items'] = interact_status['interacted_items'].apply(lambda x: random.sample(self.item_pool - x))
         interact_status['negative_samples'] = interact_status['negative_items'].apply(lambda x: random.sample(x, self.num_neg_samples))
@@ -92,11 +92,11 @@ class SampleGenerator(object):
     def _sample_negative(self, ratings, num_neg_samples=99):
         """return all negative items & 100 sampled negative items"""
         return NegativeItemSet(ratings)
-        interact_status = ratings.groupby('userId')['itemId'].apply(set).reset_index().rename(
-            columns={'itemId': 'interacted_items'})
-        interact_status['negative_items'] = interact_status['interacted_items'].apply(lambda x: random.sample(self.item_pool - x, num_neg_items))
-        interact_status['negative_samples'] = interact_status['negative_items'].apply(lambda x: random.sample(x, num_neg_samples))
-        return interact_status[['userId', 'negative_items', 'negative_samples']]
+        # interact_status = ratings.groupby('userId')['itemId'].apply(set).reset_index().rename(
+        #     columns={'itemId': 'interacted_items'})
+        # interact_status['negative_items'] = interact_status['interacted_items'].apply(lambda x: random.sample(self.item_pool - x, num_neg_items))
+        # interact_status['negative_samples'] = interact_status['negative_items'].apply(lambda x: random.sample(x, num_neg_samples))
+        # return interact_status[['userId', 'negative_items', 'negative_samples']]
 
 #     def data_generator(self, batch_size=256):
         
@@ -106,7 +106,7 @@ class SampleGenerator(object):
         users, items, ratings = [], [], []
 #         train_ratings = pd.merge(self.train_ratings, self.negatives[['userId', 'negative_items']], on='userId')
 #         train_ratings['negatives'] = train_ratings['negative_items'].apply(lambda x: random.sample(x, num_negatives))
-        for i, row in train_ratings.iterrows():
+        for i, row in self.train_ratings.iterrows():
             users.append(int(row.userId))
             items.append(int(row.itemId))
             ratings.append(float(row.rating))
