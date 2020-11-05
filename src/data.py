@@ -50,15 +50,15 @@ class SampleGenerator(object):
 
     def _normalize(self, ratings):
         """normalize into [0, 1] from [0, max_rating], explicit feedback"""
-        ratings = deepcopy(ratings)
+        # ratings = deepcopy(ratings)
         max_rating = ratings.rating.max()
         ratings['rating'] = ratings.rating * 1.0 / max_rating
         return ratings
     
     def _binarize(self, ratings):
         """binarize into 0 or 1, imlicit feedback"""
-        ratings = deepcopy(ratings)
-        ratings['rating'][ratings['rating'] > 0] = 1.0
+        # ratings = deepcopy(ratings)
+        ratings['rating'] = ratings['rating'].where(ratings['rating'] > 0, 1)
         return ratings
 
     def _split_loo(self, ratings):
