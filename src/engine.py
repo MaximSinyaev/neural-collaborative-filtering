@@ -1,9 +1,10 @@
 import torch
 from torch.autograd import Variable
 from tensorboardX import SummaryWriter
+from tqdm import tqdm
 
-from utils import save_checkpoint, use_optimizer
-from metrics import MetronAtK
+from .utils import save_checkpoint, use_optimizer
+from .metrics import MetronAtK
 
 
 class Engine(object):
@@ -39,12 +40,12 @@ class Engine(object):
         assert hasattr(self, 'model'), 'Please specify the exact model !'
         self.model.train()
         total_loss = 0
-        for batch_id, batch in enumerate(train_loader):
+        for batch_id, batch in tqdm(enumerate(train_loader), disable=True):
             assert isinstance(batch[0], torch.LongTensor)
             user, item, rating = batch[0], batch[1], batch[2]
             rating = rating.float()
             loss = self.train_single_batch(user, item, rating)
-            print('[Training Epoch {}] Batch {}, Loss {}'.format(epoch_id, batch_id, loss))
+#             print('[Training Epoch {}] Batch {}, Loss {}'.format(epoch_id, batch_id, loss))
             total_loss += loss
         self._writer.add_scalar('model/loss', total_loss, epoch_id)
 
