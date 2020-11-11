@@ -10,6 +10,7 @@ from multiprocessing import Pool, Process
 
 
 from pandarallel import pandarallel
+from itertools import chain
 
 RANDOM_SEED = 42
 N_THREADS = 10
@@ -87,6 +88,8 @@ class NegativeItemSet:
 #         return interact_status[['userId', 'negative_items', 'negative_samples']]
         return interact_status[['userId', 'negative_items']]
 
+#     def get_negative_samples
+
 
     
     
@@ -94,7 +97,7 @@ class NegativeItemSet:
 class SampleGenerator(object):
     """Construct dataset for NCF"""
 
-    def __init__(self, ratings, verbose=False):
+    def __init__(self, ratings, verbose=False, n_users_test_split=0.2):
         """
         args:
             ratings: pd.DataFrame, which contains 4 columns = ['userId', 'itemId', 'rating', 'timestamp']
@@ -105,6 +108,7 @@ class SampleGenerator(object):
 
         self.ratings = ratings
         self.verbose = verbose
+        self.n_users_test_split = n_users_test_split
         # explicit feedback using _normalize and implicit using _binarize
         # self.preprocess_ratings = self._normalize(ratings)
         self.preprocess_ratings = self._binarize(ratings)
@@ -124,18 +128,21 @@ class SampleGenerator(object):
     
     def _binarize(self, ratings):
         """binarize into 0 or 1, imlicit feedback"""
-        # ratings = deepcopy(ratings)
-
+        ratings = deepcopy(ratings)
         ratings.loc[:, 'rating'] = ratings['rating'].mask(ratings['rating'] > 0, 1.)
-        # print('Binariation done')
         return ratings
 
     def _split_loo(self, ratings):
         """leave one out train/test split """
+        self.n_users_test_split
         ratings['rank_latest'] = ratings.groupby(['userId'])['timestamp'].rank(method='first', ascending=False)
-        test = ratings[ratings['rank_latest'] == 1]
-        train = ratings[ratings['rank_latest'] > 1]
-        assert train['userId'].nunique() == test['userId'].nunique()
+        test_users = random.sample(self.user_pool, int(self.n_users_test_split * len(self.user_pool)))
+        test = ratings.query('userId in @test_users')
+        test = test[test['rank_latest'] == 1]
+        train = ratings.drop(test.index)
+#         train = ratings[ratings['rank_latest'] > 1]
+#         assert train['userId'].nunique() == test['userId'].nunique()
+        assert (train.shape[0] + test.shape[0]) == ratings.shape[0]
         return train[['userId', 'itemId', 'rating']], test[['userId', 'itemId', 'rating']]
 
     def _sample_negative(self, ratings, num_neg_samples=99):
@@ -156,10 +163,14 @@ class SampleGenerator(object):
         res_len = (1 + num_neg) * positive_num
         user = [user_id] * res_len
         negative = self.negatives[user_id]
-        negative_samples = np.random.choice(list(negative['negative_items']), num_neg * positive_num)
+        negative_samples = random.sample(list(negative['negative_items']), num_neg * positive_num)
         items = [int(row.itemId[i // (1 + num_neg)]) if (i % (1 + num_neg) == 0) else negative_samples[i - (i // 5 + 1)] for i in range(res_len)]
         ratings = [float(row.rating[i // (1 + num_neg)]) if i % (1 + num_neg) == 0 else 0. for i in range(res_len)]
         return user, items, ratings
+    
+    def get_negative_samples(self, user_id, n_neg=200):
+        negatives = self.negatives[user_id]['negative_items']
+        return random.sample(list(negatives), n_neg)
     
     def instance_a_train_loader(self, num_negatives=4, batch_size=256):
         """
@@ -173,7 +184,7 @@ class SampleGenerator(object):
 #         train_ratings['negatives'] = train_ratings['negative_items'].apply(lambda x: random.sample(x, num_negatives))
         train_ratings_grouped = self.train_ratings.groupby('userId').agg({'itemId': list, 'rating': list})#.parallel_apply(self.transform_to_array, axis=1, num_neg=4)
 #         [(users.extend(ar[0]), items.extend(ar[1]), ratings.extend(ar[2])) for ar in temp_ar]
-        [(users.extend(ar[0]), items.extend(ar[1]), ratings.extend(ar[2])) for ar in tqdm(train_ratings_grouped.parallel_apply(self.transform_to_array, axis=1, num_neg=num_negatives).values)]
+        [(users.extend(ar[0]), items.extend(ar[1]), ratings.extend(ar[2])) for ar in train_ratings_grouped.parallel_apply(self.transform_to_array, axis=1, num_neg=num_negatives).values]
 #         for i, row in tqdm(train_ratings_grouped.iterrows(), total=train_ratings_grouped.shape[0], disable=(not self.verbose)):
 #             ar = self.transform_to_array(row, num_negatives)
 #             users.extend(ar[0])
@@ -195,16 +206,34 @@ class SampleGenerator(object):
         return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     @property
-    def evaluate_data(self):
+    def evaluate_data(self, n_neg=200):
         """create evaluate data"""
 #         test_ratings = pd.merge(self.test_ratings, self.negatives[['userId', 'negative_samples']], on='userId')
         test_users, test_items, negative_users, negative_items = [], [], [], []
-        for i, row in self.train_ratings.iterrows():
-            test_users.append(int(row.userId))
-            test_items.append(int(row.itemId))
-            negatives = self.negatives[users[-1]]
-            for j in range(len(negatives.negative_samples)):
-                negative_users.append(int(row.userId))
-                negative_items.append(int(negatives.negative_samples[j]))
+#         test_ratings_grouped = self.test_ratings.groupby('userId').agg({'itemId': list, 'rating': list})
+#         [(test_users.extend(ar[0]), test_items.extend(ar[1]), ratings.extend(ar[2])) for ar in train_ratings_grouped.parallel_apply(self.transform_to_array, axis=1, num_neg=num_negatives).values]
+        test_users.extend(self.test_ratings.userId.astype('int').values)
+        test_items.extend(self.test_ratings.itemId.astype('int').values)
+        negative_users = np.repeat(test_users, n_neg)
+        negative_items = [item for user in tqdm(test_users) for item in self.get_negative_samples(user, n_neg)]
+        
+#         for i, row in self.test_ratings.iterrows():
+#             test_users.append(int(row.userId))
+#             test_items.append(int(row.itemId))
+#             negatives = self.negatives[users[-1]]
+#             for j in range(len(negatives.negative_samples)):
+#                 negative_users.append(int(row.userId))
+#                 negative_items.append(int(negatives.negative_samples[j]))
         return [torch.LongTensor(test_users), torch.LongTensor(test_items), torch.LongTensor(negative_users),
+                torch.LongTensor(negative_items)]
+
+    def evaluate_data_generator(self, n_neg, batch_size):
+        test_ratings_grouped = self.test_ratings.groupby('userId', as_index=False).agg({'itemId': list, 'rating': list})
+        for idx in range(0, test_ratings_grouped.shape[0], batch_size):
+            test_users, test_items, negative_users, negative_items = [], [], [], []
+            test_users.extend([int(user) for user in test_ratings_grouped.userId.iloc[idx: idx + batch_size].values])
+            test_items.extend([int(item) for i in test_ratings_grouped.itemId.iloc[idx: idx + batch_size].values for item in i])
+            negative_users = np.repeat(test_users, n_neg)
+            negative_items = [int(item) for user in test_users for item in self.get_negative_samples(user, n_neg)]
+            yield [torch.LongTensor(test_users), torch.LongTensor(test_items), torch.LongTensor(negative_users),
                 torch.LongTensor(negative_items)]

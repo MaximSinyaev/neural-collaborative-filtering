@@ -1,7 +1,7 @@
 import torch
-from gmf import GMF
-from engine import Engine
-from utils import use_cuda, resume_checkpoint
+from .gmf import GMF
+from .engine import Engine
+from .utils import use_cuda, resume_checkpoint
 
 
 class MLP(torch.nn.Module):

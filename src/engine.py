@@ -1,9 +1,10 @@
 import torch
+import numpy as np
 from torch.autograd import Variable
 from tensorboardX import SummaryWriter
 
-from utils import save_checkpoint, use_optimizer
-from metrics import MetronAtK
+from .utils import save_checkpoint, use_optimizer
+from .metrics import MetronAtK
 
 
 class Engine(object):
@@ -50,31 +51,37 @@ class Engine(object):
 
     def evaluate(self, evaluate_data, epoch_id):
         assert hasattr(self, 'model'), 'Please specify the exact model !'
-        self.model.eval()
+        self.model.eval() 
+        hit_ratio, ndcg = [], []
+        evaluate_data = evaluate_data(n_neg=500, batch_size=self.config['batch_size'])
         with torch.no_grad():
-            test_users, test_items = evaluate_data[0], evaluate_data[1]
-            negative_users, negative_items = evaluate_data[2], evaluate_data[3]
-            if self.config['use_cuda'] is True:
-                test_users = test_users.cuda()
-                test_items = test_items.cuda()
-                negative_users = negative_users.cuda()
-                negative_items = negative_items.cuda()
-            test_scores = self.model(test_users, test_items)
-            negative_scores = self.model(negative_users, negative_items)
-            if self.config['use_cuda'] is True:
-                test_users = test_users.cpu()
-                test_items = test_items.cpu()
-                test_scores = test_scores.cpu()
-                negative_users = negative_users.cpu()
-                negative_items = negative_items.cpu()
-                negative_scores = negative_scores.cpu()
-            self._metron.subjects = [test_users.data.view(-1).tolist(),
-                                 test_items.data.view(-1).tolist(),
-                                 test_scores.data.view(-1).tolist(),
-                                 negative_users.data.view(-1).tolist(),
-                                 negative_items.data.view(-1).tolist(),
-                                 negative_scores.data.view(-1).tolist()]
-        hit_ratio, ndcg = self._metron.cal_hit_ratio(), self._metron.cal_ndcg()
+            for evaluate_data_batch in evaluate_data:
+                test_users, test_items = evaluate_data_batch[0], evaluate_data_batch[1]
+                negative_users, negative_items = evaluate_data_batch[2], evaluate_data_batch[3]
+                if self.config['use_cuda'] is True:
+                    test_users = test_users.cuda()
+                    test_items = test_items.cuda()
+                    negative_users = negative_users.cuda()
+                    negative_items = negative_items.cuda()
+                test_scores = self.model(test_users, test_items)
+                negative_scores = self.model(negative_users, negative_items)
+                if self.config['use_cuda'] is True:
+                    test_users = test_users.cpu()
+                    test_items = test_items.cpu()
+                    test_scores = test_scores.cpu()
+                    negative_users = negative_users.cpu()
+                    negative_items = negative_items.cpu()
+                    negative_scores = negative_scores.cpu()
+                self._metron.subjects = [test_users.data.view(-1).tolist(),
+                                     test_items.data.view(-1).tolist(),
+                                     test_scores.data.view(-1).tolist(),
+                                     negative_users.data.view(-1).tolist(),
+                                     negative_items.data.view(-1).tolist(),
+                                     negative_scores.data.view(-1).tolist()]
+                hit_ratio_batch, ndcg_batch = self._metron.cal_hit_ratio(), self._metron.cal_ndcg()
+                hit_ratio.append(hit_ratio_batch)
+                hit_ratio.append(ndcg_batch)
+        hit_ratio, ndcg = np.mean(hit_ratio), np.mean(ndcg)
         self._writer.add_scalar('performance/HR', hit_ratio, epoch_id)
         self._writer.add_scalar('performance/NDCG', ndcg, epoch_id)
         print('[Evluating Epoch {}] HR = {:.4f}, NDCG = {:.4f}'.format(epoch_id, hit_ratio, ndcg))
