@@ -1,11 +1,14 @@
 import torch
-from gmf import GMF
-from mlp import MLP
-from engine import Engine
-from utils import use_cuda, resume_checkpoint
+from .gmf import GMF
+from .mlp import MLP
+from .engine import Engine
+from .utils import use_cuda, resume_checkpoint
 
+MODELS_PRETRAIN_TYPE = 'models'
+EMBEDINGS_PRETRAIN_TYPE = 'embeddings'
 
 class NeuMF(torch.nn.Module):
+    pretrain_types = [MODELS_PRETRAIN_TYPE, EMBEDINGS_PRETRAIN_TYPE]
     def __init__(self, config):
         super(NeuMF, self).__init__()
         self.config = config
@@ -46,10 +49,10 @@ class NeuMF(torch.nn.Module):
 
     def init_weight(self):
         pass
-
-    def load_pretrain_weights(self):
+    
+    def load_pretrained_weights_from_models(self, config):
         """Loading weights from trained MLP model & GMF model"""
-        config = self.config
+        
         config['latent_dim'] = config['latent_dim_mlp']
         mlp_model = MLP(config)
         if config['use_cuda'] is True:
@@ -71,6 +74,28 @@ class NeuMF(torch.nn.Module):
 
         self.affine_output.weight.data = 0.5 * torch.cat([mlp_model.affine_output.weight.data, gmf_model.affine_output.weight.data], dim=-1)
         self.affine_output.bias.data = 0.5 * (mlp_model.affine_output.bias.data + gmf_model.affine_output.bias.data)
+    
+    def load_pretrain_embeddings(self, config):
+        assert 'user_latent_matrix' in config
+        assert 'item_latent_matrix' in config
+        user_vectors = config['user_latent_matrix']
+        item_vectors = config['item_latent_matrix']
+        
+        self.embedding_user_mlp.weight.data = torch.tensor(user_vectors).cuda()
+        self.embedding_item_mlp.weight.data = torch.tensor(item_vectors).cuda()
+        
+        self.embedding_user_mf.weight.data = torch.tensor(user_vectors).cuda()
+        self.embedding_item_mf.weight.data = torch.tensor(item_vectors).cuda()
+    
+    def load_pretrain_weights(self):
+        config = self.config
+        pretrain_type = config.get('pretrain_type', None)
+        assert pretrain_type in self.pretrain_types
+        if pretrain_type == EMBEDINGS_PRETRAIN_TYPE:
+            self.load_pretrain_embeddings(config)
+        elif pretrain_type == MODELS_PRETRAIN_TYPE:
+            self.load_pretrained_weights_from_models(config)
+        
 
 
 class NeuMFEngine(Engine):
@@ -80,6 +105,7 @@ class NeuMFEngine(Engine):
         if config['use_cuda'] is True:
             use_cuda(True, config['device_id'])
             self.model.cuda()
+#         print(config)
         super(NeuMFEngine, self).__init__(config)
         print(self.model)
 

@@ -20,6 +20,23 @@ random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 
 
+class UserItemDataset(Dataset):
+    def __init__(self, user_tensor, item_tensor, neg_user_tensor, neg_item_tensor, neg_sample_size):
+        self.user_tensor = user_tensor
+        self.item_tensor = item_tensor
+        self.neg_user_tensor = neg_user_tensor
+        self.neg_item_tensor = neg_item_tensor
+        self.neg_sample_size =neg_sample_size
+        
+    def __getitem__(self, index):
+        neg_range = (index * self.neg_sample_size, (index + 1) * self.neg_sample_size)
+        return self.user_tensor[index], self.item_tensor[index],\
+    self.neg_user_tensor[neg_range[0]: neg_range[1]], \
+    self.neg_item_tensor[neg_range[0]: neg_range[1]]
+        
+    def __len__(self):
+        return self.user_tensor.size(0)
+
 class UserItemRatingDataset(Dataset):
     """Wrapper, convert <user, item, rating> Tensor into Pytorch Dataset"""
     def __init__(self, user_tensor, item_tensor, target_tensor):
@@ -97,7 +114,7 @@ class NegativeItemSet:
 class SampleGenerator(object):
     """Construct dataset for NCF"""
 
-    def __init__(self, ratings, verbose=False, n_users_test_split=0.2):
+    def __init__(self, ratings, verbose=False, n_users_test_split=0.1, test_batch_size=64):
         """
         args:
             ratings: pd.DataFrame, which contains 4 columns = ['userId', 'itemId', 'rating', 'timestamp']
@@ -108,6 +125,7 @@ class SampleGenerator(object):
 
         self.ratings = ratings
         self.verbose = verbose
+        self.test_batch_size = 64
         self.n_users_test_split = n_users_test_split
         # explicit feedback using _normalize and implicit using _binarize
         # self.preprocess_ratings = self._normalize(ratings)
@@ -121,7 +139,7 @@ class SampleGenerator(object):
 
     def _normalize(self, ratings):
         """normalize into [0, 1] from [0, max_rating], explicit feedback"""
-        # ratings = deepcopy(ratings)
+        ratings = deepcopy(ratings)
         max_rating = ratings.rating.max()
         ratings['rating'] = ratings.rating * 1.0 / max_rating
         return ratings
@@ -162,15 +180,15 @@ class SampleGenerator(object):
         positive_num = len(row.itemId)
         res_len = (1 + num_neg) * positive_num
         user = [user_id] * res_len
-        negative = self.negatives[user_id]
-        negative_samples = random.sample(list(negative['negative_items']), num_neg * positive_num)
-        items = [int(row.itemId[i // (1 + num_neg)]) if (i % (1 + num_neg) == 0) else negative_samples[i - (i // 5 + 1)] for i in range(res_len)]
+        negative = 
+        negative_samples = random.sample(self.negatives[user_id]['negative_items'], num_neg * positive_num)
+        items = [int(row.itemId[i // (1 + num_neg)]) if (i % (1 + num_neg) == 0) else negative_samples[i - (i // (1 + num_neg) + 1)] for i in range(res_len)]
         ratings = [float(row.rating[i // (1 + num_neg)]) if i % (1 + num_neg) == 0 else 0. for i in range(res_len)]
         return user, items, ratings
     
-    def get_negative_samples(self, user_id, n_neg=200):
+    def get_negative_samples(self, user_id, n_neg=400):
         negatives = self.negatives[user_id]['negative_items']
-        return random.sample(list(negatives), n_neg)
+        return random.sample(negatives, n_neg)
     
     def instance_a_train_loader(self, num_negatives=4, batch_size=256):
         """
@@ -206,7 +224,7 @@ class SampleGenerator(object):
         return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     @property
-    def evaluate_data(self, n_neg=200):
+    def evaluate_data(self, n_neg=2000, batch_size=256):
         """create evaluate data"""
 #         test_ratings = pd.merge(self.test_ratings, self.negatives[['userId', 'negative_samples']], on='userId')
         test_users, test_items, negative_users, negative_items = [], [], [], []
@@ -215,7 +233,7 @@ class SampleGenerator(object):
         test_users.extend(self.test_ratings.userId.astype('int').values)
         test_items.extend(self.test_ratings.itemId.astype('int').values)
         negative_users = np.repeat(test_users, n_neg)
-        negative_items = [item for user in tqdm(test_users) for item in self.get_negative_samples(user, n_neg)]
+        negative_items = [item for user in test_users for item in self.get_negative_samples(user, n_neg)]
         
 #         for i, row in self.test_ratings.iterrows():
 #             test_users.append(int(row.userId))
@@ -224,8 +242,9 @@ class SampleGenerator(object):
 #             for j in range(len(negatives.negative_samples)):
 #                 negative_users.append(int(row.userId))
 #                 negative_items.append(int(negatives.negative_samples[j]))
-        return [torch.LongTensor(test_users), torch.LongTensor(test_items), torch.LongTensor(negative_users),
-                torch.LongTensor(negative_items)]
+        dataset = UserItemDataset(torch.LongTensor(test_users), torch.LongTensor(test_items), torch.LongTensor(negative_users),
+                torch.LongTensor(negative_items), neg_sample_size=n_neg)
+        return DataLoader(dataset, batch_size=self.test_batch_size, shuffle=True)
 
     def evaluate_data_generator(self, n_neg, batch_size):
         test_ratings_grouped = self.test_ratings.groupby('userId', as_index=False).agg({'itemId': list, 'rating': list})
