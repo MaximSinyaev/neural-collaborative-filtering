@@ -30,9 +30,9 @@ class GMF(torch.nn.Module):
 
 class GMFEngine(Engine):
     """Engine for training & evaluating GMF model"""
-    def __init__(self, config):
+    def __init__(self, config, **kwargs):
         self.model = GMF(config)
         if config['use_cuda'] is True:
             use_cuda(True, config['device_id'])
             self.model.cuda()
-        super(GMFEngine, self).__init__(config)
+        super(GMFEngine, self).__init__(config, **kwargs)

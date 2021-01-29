@@ -30,13 +30,9 @@ def bpr_loss(positive_predictions, negative_predictions, mask=None):
        uncertainty in artificial intelligence. AUAI Press, 2009.
     """
 
-    loss = (1.0 - torch.sigmoid(positive_predictions -
-                                negative_predictions))
+    loss = -(torch.log(torch.sigmoid(positive_predictions -
+                                negative_predictions))).sum()
 
-    if mask is not None:
-        mask = mask.float()
-        loss = loss * mask
-        return loss.sum() / mask.sum()
 
     return loss.mean()
 
@@ -46,7 +42,7 @@ class Engine(object):
     Note: Subclass should implement self.model !
     """
 
-    def __init__(self, config, use_bpr_loss=False):
+    def __init__(self, config, use_bpr_loss=False, **kwargs):
         self.config = config  # model configuration
         self._metron = MetronAtK(top_k=10)
         self._writer = SummaryWriter(log_dir='runs/{}'.format(config['alias']))  # tensorboard writer

@@ -180,7 +180,7 @@ class SampleGenerator(object):
         positive_num = len(row.itemId)
         res_len = (1 + num_neg) * positive_num
         user = [user_id] * res_len
-        negative = 
+#         negative = 
         negative_samples = random.sample(self.negatives[user_id]['negative_items'], num_neg * positive_num)
         items = [int(row.itemId[i // (1 + num_neg)]) if (i % (1 + num_neg) == 0) else negative_samples[i - (i // (1 + num_neg) + 1)] for i in range(res_len)]
         ratings = [float(row.rating[i // (1 + num_neg)]) if i % (1 + num_neg) == 0 else 0. for i in range(res_len)]

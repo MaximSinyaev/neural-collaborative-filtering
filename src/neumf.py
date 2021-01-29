@@ -10,8 +10,8 @@ EMBEDINGS_PRETRAIN_TYPE = 'embeddings'
 class NeuMF(torch.nn.Module):
     pretrain_types = [MODELS_PRETRAIN_TYPE, EMBEDINGS_PRETRAIN_TYPE]
     def __init__(self, config):
-        super(NeuMF, self).__init__()
         self.config = config
+        super(NeuMF, self).__init__()
         self.num_users = config['num_users']
         self.num_items = config['num_items']
         self.latent_dim_mf = config['latent_dim_mf']
@@ -78,6 +78,7 @@ class NeuMF(torch.nn.Module):
     def load_pretrain_embeddings(self, config):
         assert 'user_latent_matrix' in config
         assert 'item_latent_matrix' in config
+        
         user_vectors = config['user_latent_matrix']
         item_vectors = config['item_latent_matrix']
         
@@ -100,14 +101,12 @@ class NeuMF(torch.nn.Module):
 
 class NeuMFEngine(Engine):
     """Engine for training & evaluating GMF model"""
-    def __init__(self, config):
+    def __init__(self, config, **kwargs):
         self.model = NeuMF(config)
         if config['use_cuda'] is True:
             use_cuda(True, config['device_id'])
             self.model.cuda()
-#         print(config)
-        super(NeuMFEngine, self).__init__(config)
+        super(NeuMFEngine, self).__init__(config, **kwargs)
         print(self.model)
-
         if config['pretrain']:
             self.model.load_pretrain_weights()
